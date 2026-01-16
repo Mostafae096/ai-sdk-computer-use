@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { ChatSession } from '@/lib/types/sessions';
-import { createSession as createSessionHelper, generateSessionNameFromMessages, type StoredSession } from '@/lib/types/sessions';
+import { createSession as createSessionHelper, generateSessionNameFromMessages, generateSessionName, type StoredSession } from '@/lib/types/sessions';
 import { sessionStorage, sessionToStored, storedToSession } from '@/lib/storage/session-storage';
 import type { UIMessage } from 'ai';
 import type { AgentEvent } from '@/lib/types/events';
@@ -200,13 +200,23 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Always update session name from first user message content
+      // Always try to update session name when messages exist
       let sessionName = session.name;
       if (messages.length > 0) {
         const nameFromMessages = generateSessionNameFromMessages(messages);
-        // Only update if we got a valid name from messages (not "New Session")
-        if (nameFromMessages !== 'New Session') {
+        
+        if (nameFromMessages) {
+          // Successfully extracted name from messages - use it
           sessionName = nameFromMessages;
+        } else {
+          // Extraction failed - use fallback naming if session is still "New Session"
+          // This ensures sessions get unique, identifiable names
+          if (sessionName === 'New Session') {
+            // Find the index of this session to generate a numbered name
+            const sessionIndex = state.sessions.findIndex((s) => s.id === sessionId);
+            sessionName = generateSessionName(sessionIndex >= 0 ? sessionIndex : state.sessions.length);
+          }
+          // If session already has a custom name, keep it
         }
       }
 
