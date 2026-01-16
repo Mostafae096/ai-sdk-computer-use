@@ -10,7 +10,6 @@ import type {
   ComputerEventPayload,
   BashEventPayload,
 } from '@/lib/types/events';
-import { isComputerEvent } from '@/lib/types/events';
 
 /**
  * Track tool invocations from messages and create/update events

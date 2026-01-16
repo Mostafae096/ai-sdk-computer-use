@@ -85,7 +85,7 @@ export function useSessionLoader(setMessages: (messages: UIMessage[]) => void) {
     }
   }, [
     sessionsLoading,
-    activeSession?.id,
+    activeSession,
     loadSessionData,
     setMessages,
     loadEvents,

@@ -179,7 +179,7 @@ export const killDesktop = async (id: string = "desktop") => {
   try {
     // Don't actually kill - just try to connect to verify it exists
     // Sandboxes auto-pause after inactivity, so we don't need to kill them
-    const desktop = await Sandbox.connect(id);
+    await Sandbox.connect(id);
     // Just verify connection - sandbox will auto-pause when inactive
     console.log(`Sandbox ${id} verified - will auto-pause when inactive`);
   } catch (error: unknown) {

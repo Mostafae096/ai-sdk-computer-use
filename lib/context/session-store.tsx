@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { ChatSession } from '@/lib/types/sessions';
-import { createSession as createSessionHelper, generateSessionName, generateSessionNameFromMessages, type StoredSession } from '@/lib/types/sessions';
+import { createSession as createSessionHelper, generateSessionNameFromMessages, type StoredSession } from '@/lib/types/sessions';
 import { sessionStorage, sessionToStored, storedToSession } from '@/lib/storage/session-storage';
 import type { UIMessage } from 'ai';
 import type { AgentEvent } from '@/lib/types/events';

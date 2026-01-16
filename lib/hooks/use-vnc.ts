@@ -125,7 +125,7 @@ export function useVNC(activeSession: ChatSession | null): UseVNCReturn {
     } else {
       setIsInitializing(false);
     }
-  }, [activeSession?.id, activeSession?.sandboxId, streamUrl, sandboxId, initialize]);
+  }, [activeSession, streamUrl, sandboxId, initialize]);
 
   return {
     streamUrl,
