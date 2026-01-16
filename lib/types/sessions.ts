@@ -55,13 +55,18 @@ export function generateSessionNameFromMessages(messages: UIMessage[]): string {
     // Try to get text from content or parts
     let text = '';
     
+    // Store content in a variable to prevent TypeScript narrowing issues
+    const content = firstUserMessage.content;
+    
     // Check if content is a string
-    if (typeof firstUserMessage.content === 'string') {
-      text = firstUserMessage.content;
+    if (typeof content === 'string') {
+      text = content;
     } 
     // Check if content is an array (legacy format)
-    else if (Array.isArray(firstUserMessage.content)) {
-      const textContent = firstUserMessage.content.find(
+    else if (Array.isArray(content)) {
+      // Type assertion needed because TypeScript narrows the type incorrectly
+      const contentArray = content as unknown as Array<string | { type?: string; text?: string }>;
+      const textContent = contentArray.find(
         (item) => typeof item === 'string' || (typeof item === 'object' && item?.type === 'text')
       );
       if (typeof textContent === 'string') {
