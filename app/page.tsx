@@ -1,68 +1,189 @@
-"use client";
+'use client';
 
-import { PreviewMessage } from "@/components/message";
-import { getDesktopURL } from "@/lib/e2b/utils";
-import { useScrollToBottom } from "@/lib/use-scroll-to-bottom";
-import { useChat } from "@ai-sdk/react";
-import { useEffect, useState } from "react";
-import { Input } from "@/components/input";
-import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
-import { DeployButton, ProjectInfo } from "@/components/project-info";
-import { AISDKLogo } from "@/components/icons";
-import { PromptSuggestions } from "@/components/prompt-suggestions";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
-import { ABORTED } from "@/lib/utils";
+import { useScrollToBottom } from '@/lib/use-scroll-to-bottom';
+import { useChat } from '@ai-sdk/react';
+import type { UIMessage } from 'ai';
+import { useEffect, useState, useRef } from 'react';
+import { toast } from 'sonner';
+import { ABORTED } from '@/lib/utils';
+import { EventStoreProvider } from '@/lib/context/event-store';
+import { SessionStoreProvider } from '@/lib/context/session-store';
+import { useEventTracker } from '@/lib/hooks/use-event-tracker';
+import { useSession } from '@/lib/hooks/use-session';
+import { useEventStore } from '@/lib/hooks/use-event-store';
+import { useVNC } from '@/lib/hooks/use-vnc';
+import { useRateLimit } from '@/lib/hooks/use-rate-limit';
+import { useSessionLoader } from '@/lib/hooks/use-session-loader';
+import { useStorageQuota } from '@/lib/hooks/use-storage-quota';
+import { DesktopLayout, MobileLayout } from '@/components/layouts';
+import { isRateLimitError } from '@/lib/utils/error-helpers';
 
-export default function Chat() {
-  // Create separate refs for mobile and desktop to ensure both scroll properly
+function ChatContent() {
+  // Scroll refs
   const [desktopContainerRef, desktopEndRef] = useScrollToBottom();
   const [mobileContainerRef, mobileEndRef] = useScrollToBottom();
 
-  const [isInitializing, setIsInitializing] = useState(true);
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [sandboxId, setSandboxId] = useState<string | null>(null);
+  // UI state
+  const [sessionSidebarCollapsed, setSessionSidebarCollapsed] = useState(true);
+  const [activeTab, setActiveTab] = useState<'chat' | 'vnc'>('chat');
 
+  // Session management
+  const { getActiveSession, saveSessionMessages, saveSessionEvents } = useSession();
+  const activeSession = getActiveSession();
+
+  // Event store
+  const { state: eventStore } = useEventStore();
+
+  // VNC management
+  const { streamUrl, sandboxId, isLoading: vncLoading, isInitializing, refresh: refreshDesktop } = useVNC(activeSession);
+
+  // Rate limiting
+  const { state: rateLimitState, handleRateLimit, cancel: cancelRateLimit } = useRateLimit();
+
+  // Storage quota monitoring
+  useStorageQuota();
+
+  // Session loading and initial messages
+  const [messages, setMessages] = useState<UIMessage[]>([]);
+  const { initialMessages } = useSessionLoader(setMessages);
+
+  // Chat state
   const {
-    messages,
+    messages: chatMessages,
     input,
     handleInputChange,
     handleSubmit,
     status,
     stop: stopGeneration,
     append,
-    setMessages,
+    setMessages: setChatMessages,
   } = useChat({
-    api: "/api/chat",
-    id: sandboxId ?? undefined,
+    api: '/api/chat',
+    initialMessages,
     body: {
-      sandboxId,
+      sandboxId: activeSession?.sandboxId || sandboxId || undefined,
     },
     maxSteps: 30,
     onError: (error) => {
-      console.error(error);
-      toast.error("There was an error", {
-        description: "Please try again later.",
-        richColors: true,
-        position: "top-center",
-      });
+      console.error('Chat error:', error);
+      console.log('Is rate limit error?', isRateLimitError(error));
+
+      // Save messages before error to preserve them
+      if (activeSession && chatMessages.length > 0) {
+        saveSessionMessages(activeSession.id, chatMessages);
+      }
+
+      // Handle rate limiting
+      if (isRateLimitError(error)) {
+        console.log('Handling rate limit error, retry will happen after countdown');
+        handleRateLimit(error, chatMessages, input, (message) => {
+          console.log('Retrying with message:', message);
+          append({ role: 'user', content: message });
+        });
+      } else {
+        toast.error('There was an error', {
+          description: 'Please try again later.',
+          richColors: true,
+          position: 'top-center',
+        });
+      }
+    },
+    onFinish: (message) => {
+      // Save messages when chat finishes
+      // useChat already includes the finished message in chatMessages when onFinish is called
+      if (activeSession) {
+        saveSessionMessages(activeSession.id, chatMessages);
+      }
     },
   });
+
+  // Sync chat messages with local state
+  useEffect(() => {
+    setMessages(chatMessages);
+  }, [chatMessages]);
+
+  // CRITICAL FIX: Save messages immediately when chatMessages changes
+  // This ensures user messages are saved as soon as they're added, not just when AI responds
+  const lastSavedMessagesRef = useRef<string>('');
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  useEffect(() => {
+    if (!activeSession || chatMessages.length === 0) return;
+
+    // Create a signature of messages to detect actual changes
+    // Include length to ensure uniqueness even if IDs somehow match
+    const messagesSignature = JSON.stringify({
+      length: chatMessages.length,
+      ids: chatMessages.map((m) => ({ id: m.id, role: m.role })),
+    });
+
+    // Only save if messages actually changed
+    if (messagesSignature === lastSavedMessagesRef.current) {
+      return;
+    }
+
+    // Clear any pending save timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Save immediately when messages change (especially user messages)
+    // Use a small timeout to batch rapid changes
+    saveTimeoutRef.current = setTimeout(() => {
+      saveSessionMessages(activeSession.id, chatMessages);
+      // Update ref AFTER save completes to prevent duplicate saves
+      lastSavedMessagesRef.current = messagesSignature;
+      saveTimeoutRef.current = null;
+    }, 100);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+    };
+  }, [chatMessages, activeSession?.id, saveSessionMessages]);
+
+  // Track events from messages
+  useEventTracker(chatMessages, status);
+
+  // Save events to session - use ref to prevent infinite loop
+  const eventsRef = useRef<typeof eventStore.events>([]);
+  useEffect(() => {
+    if (!activeSession) return;
+
+    // Only save if events actually changed (by ID comparison)
+    const currentEventIds = eventStore.events.map((e) => e.id).join(',');
+    const previousEventIds = eventsRef.current.map((e) => e.id).join(',');
+
+    if (currentEventIds !== previousEventIds && eventStore.events.length > 0) {
+      eventsRef.current = eventStore.events;
+      saveSessionEvents(activeSession.id, eventStore.events);
+    }
+  }, [eventStore.events.length, activeSession?.id]);
+
+  // Handle window resize for responsive panels
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1200 && !sessionSidebarCollapsed) {
+        setSessionSidebarCollapsed(true);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [sessionSidebarCollapsed]);
 
   const stop = () => {
     stopGeneration();
 
-    const lastMessage = messages.at(-1);
+    const lastMessage = chatMessages.at(-1);
     const lastMessageLastPart = lastMessage?.parts.at(-1);
     if (
-      lastMessage?.role === "assistant" &&
-      lastMessageLastPart?.type === "tool-invocation"
+      lastMessage?.role === 'assistant' &&
+      lastMessageLastPart?.type === 'tool-invocation'
     ) {
-      setMessages((prev) => [
+      setChatMessages((prev) => [
         ...prev.slice(0, -1),
         {
           ...lastMessage,
@@ -72,7 +193,7 @@ export default function Chat() {
               ...lastMessageLastPart,
               toolInvocation: {
                 ...lastMessageLastPart.toolInvocation,
-                state: "result",
+                state: 'result',
                 result: ABORTED,
               },
             },
@@ -82,86 +203,10 @@ export default function Chat() {
     }
   };
 
-  const isLoading = status !== "ready";
-
-  const refreshDesktop = async () => {
-    try {
-      setIsInitializing(true);
-      const { streamUrl, id } = await getDesktopURL(sandboxId || undefined);
-      // console.log("Refreshed desktop connection with ID:", id);
-      setStreamUrl(streamUrl);
-      setSandboxId(id);
-    } catch (err) {
-      console.error("Failed to refresh desktop:", err);
-    } finally {
-      setIsInitializing(false);
-    }
-  };
-
-  // Kill desktop on page close
-  useEffect(() => {
-    if (!sandboxId) return;
-
-    // Function to kill the desktop - just one method to reduce duplicates
-    const killDesktop = () => {
-      if (!sandboxId) return;
-
-      // Use sendBeacon which is best supported across browsers
-      navigator.sendBeacon(
-        `/api/kill-desktop?sandboxId=${encodeURIComponent(sandboxId)}`,
-      );
-    };
-
-    // Detect iOS / Safari
-    const isIOS =
-      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-
-    // Choose exactly ONE event handler based on the browser
-    if (isIOS || isSafari) {
-      // For Safari on iOS, use pagehide which is most reliable
-      window.addEventListener("pagehide", killDesktop);
-
-      return () => {
-        window.removeEventListener("pagehide", killDesktop);
-        // Also kill desktop when component unmounts
-        killDesktop();
-      };
-    } else {
-      // For all other browsers, use beforeunload
-      window.addEventListener("beforeunload", killDesktop);
-
-      return () => {
-        window.removeEventListener("beforeunload", killDesktop);
-        // Also kill desktop when component unmounts
-        killDesktop();
-      };
-    }
-  }, [sandboxId]);
-
-  useEffect(() => {
-    // Initialize desktop and get stream URL when the component mounts
-    const init = async () => {
-      try {
-        setIsInitializing(true);
-
-        // Use the provided ID or create a new one
-        const { streamUrl, id } = await getDesktopURL(sandboxId ?? undefined);
-
-        setStreamUrl(streamUrl);
-        setSandboxId(id);
-      } catch (err) {
-        console.error("Failed to initialize desktop:", err);
-        toast.error("Failed to initialize desktop");
-      } finally {
-        setIsInitializing(false);
-      }
-    };
-
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const isLoading = status !== 'ready';
+  const selectedEvent = eventStore.selectedEventId
+    ? eventStore.events.find((e) => e.id === eventStore.selectedEventId)
+    : null;
 
   return (
     <div className="flex h-dvh relative">
@@ -170,143 +215,63 @@ export default function Chat() {
         <span>Headless mode</span>
       </div>
 
-      {/* Resizable Panels */}
-      <div className="w-full hidden xl:block">
-        <ResizablePanelGroup direction="horizontal" className="h-full">
-          {/* Desktop Stream Panel */}
-          <ResizablePanel
-            defaultSize={70}
-            minSize={40}
-            className="bg-black relative items-center justify-center"
-          >
-            {streamUrl ? (
-              <>
-                <iframe
-                  src={streamUrl}
-                  className="w-full h-full"
-                  style={{
-                    transformOrigin: "center",
-                    width: "100%",
-                    height: "100%",
-                  }}
-                  allow="autoplay"
-                />
-                <Button
-                  onClick={refreshDesktop}
-                  className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white px-3 py-1 rounded text-sm z-10"
-                  disabled={isInitializing}
-                >
-                  {isInitializing ? "Creating desktop..." : "New desktop"}
-                </Button>
-              </>
-            ) : (
-              <div className="flex items-center justify-center h-full text-white">
-                {isInitializing
-                  ? "Initializing desktop..."
-                  : "Loading stream..."}
-              </div>
-            )}
-          </ResizablePanel>
+      {/* Desktop Layout */}
+      <DesktopLayout
+        messages={chatMessages}
+        input={input}
+        handleInputChange={handleInputChange}
+        handleSubmit={handleSubmit}
+        isLoading={isLoading}
+        status={status}
+        stop={stop}
+        append={append}
+        isInitializing={isInitializing}
+        sessionSidebarCollapsed={sessionSidebarCollapsed}
+        onToggleSessionSidebar={setSessionSidebarCollapsed}
+        desktopContainerRef={desktopContainerRef}
+        desktopEndRef={desktopEndRef}
+        rateLimitState={rateLimitState}
+        onCancelRateLimit={cancelRateLimit}
+        streamUrl={streamUrl}
+        sandboxId={sandboxId}
+        vncLoading={vncLoading}
+        onRefreshDesktop={refreshDesktop}
+        selectedEvent={selectedEvent}
+      />
 
-          <ResizableHandle withHandle />
-
-          {/* Chat Interface Panel */}
-          <ResizablePanel
-            defaultSize={30}
-            minSize={25}
-            className="flex flex-col border-l border-zinc-200"
-          >
-            <div className="bg-white py-4 px-4 flex justify-between items-center">
-              <AISDKLogo />
-              <DeployButton />
-            </div>
-
-            <div
-              className="flex-1 space-y-6 py-4 overflow-y-auto px-4"
-              ref={desktopContainerRef}
-            >
-              {messages.length === 0 ? <ProjectInfo /> : null}
-              {messages.map((message, i) => (
-                <PreviewMessage
-                  message={message}
-                  key={message.id}
-                  isLoading={isLoading}
-                  status={status}
-                  isLatestMessage={i === messages.length - 1}
-                />
-              ))}
-              <div ref={desktopEndRef} className="pb-2" />
-            </div>
-
-            {messages.length === 0 && (
-              <PromptSuggestions
-                disabled={isInitializing}
-                submitPrompt={(prompt: string) =>
-                  append({ role: "user", content: prompt })
-                }
-              />
-            )}
-            <div className="bg-white">
-              <form onSubmit={handleSubmit} className="p-4">
-                <Input
-                  handleInputChange={handleInputChange}
-                  input={input}
-                  isInitializing={isInitializing}
-                  isLoading={isLoading}
-                  status={status}
-                  stop={stop}
-                />
-              </form>
-            </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      </div>
-
-      {/* Mobile View (Chat Only) */}
-      <div className="w-full xl:hidden flex flex-col">
-        <div className="bg-white py-4 px-4 flex justify-between items-center">
-          <AISDKLogo />
-          <DeployButton />
-        </div>
-
-        <div
-          className="flex-1 space-y-6 py-4 overflow-y-auto px-4"
-          ref={mobileContainerRef}
-        >
-          {messages.length === 0 ? <ProjectInfo /> : null}
-          {messages.map((message, i) => (
-            <PreviewMessage
-              message={message}
-              key={message.id}
-              isLoading={isLoading}
-              status={status}
-              isLatestMessage={i === messages.length - 1}
-            />
-          ))}
-          <div ref={mobileEndRef} className="pb-2" />
-        </div>
-
-        {messages.length === 0 && (
-          <PromptSuggestions
-            disabled={isInitializing}
-            submitPrompt={(prompt: string) =>
-              append({ role: "user", content: prompt })
-            }
-          />
-        )}
-        <div className="bg-white">
-          <form onSubmit={handleSubmit} className="p-4">
-            <Input
-              handleInputChange={handleInputChange}
-              input={input}
-              isInitializing={isInitializing}
-              isLoading={isLoading}
-              status={status}
-              stop={stop}
-            />
-          </form>
-        </div>
-      </div>
+      {/* Mobile/Tablet Layout */}
+      <MobileLayout
+        messages={chatMessages}
+        input={input}
+        handleInputChange={handleInputChange}
+        handleSubmit={handleSubmit}
+        isLoading={isLoading}
+        status={status}
+        stop={stop}
+        append={append}
+        isInitializing={isInitializing}
+        mobileContainerRef={mobileContainerRef}
+        mobileEndRef={mobileEndRef}
+        rateLimitState={rateLimitState}
+        onCancelRateLimit={cancelRateLimit}
+        streamUrl={streamUrl}
+        sandboxId={sandboxId}
+        onRefreshDesktop={refreshDesktop}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        sessionSidebarCollapsed={sessionSidebarCollapsed}
+        onToggleSessionSidebar={setSessionSidebarCollapsed}
+      />
     </div>
+  );
+}
+
+export default function Chat() {
+  return (
+    <EventStoreProvider>
+      <SessionStoreProvider>
+        <ChatContent />
+      </SessionStoreProvider>
+    </EventStoreProvider>
   );
 }
