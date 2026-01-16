@@ -91,10 +91,10 @@ export function extractRetryAfter(error: unknown): number | null {
     return parseInt(retryMatch[1], 10);
   }
   
-  // Check for "per minute" rate limits - wait full minute + buffer
+  // Check for "per minute" rate limits - wait full minute
   if (errorMessage.includes('per minute') || errorMessage.toLowerCase().includes('per minute')) {
-    // Wait 65 seconds to ensure the minute window has fully reset
-    return 65;
+    // Wait 60 seconds to ensure the minute window has fully reset
+    return 60;
   }
   
   // Check for "per hour" or "per day" limits
@@ -105,9 +105,9 @@ export function extractRetryAfter(error: unknown): number | null {
     return 86400 + 300; // 1 day + 5 minute buffer
   }
   
-  // Default to 65 seconds for rate limits (60 + 5 second buffer)
+  // Default to 60 seconds for rate limits
   if (errorMessage.toLowerCase().includes('rate limit') || errorMessage.includes('429')) {
-    return 65;
+    return 60;
   }
   
   return null;

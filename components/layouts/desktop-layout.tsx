@@ -2,7 +2,7 @@
 
 import { PreviewMessage } from '@/components/message';
 import { Input } from '@/components/input';
-import { ProjectInfo, DeployButton } from '@/components/project-info';
+import { ProjectInfo } from '@/components/project-info';
 import { AISDKLogo } from '@/components/icons';
 import { PromptSuggestions } from '@/components/prompt-suggestions';
 import { SessionSidebar } from '@/components/session-sidebar';
@@ -89,12 +89,9 @@ export function DesktopLayout({
 
             {/* Chat Content */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-              <div className="bg-white dark:bg-zinc-900 py-4 px-4 flex justify-between items-center border-b border-zinc-200 dark:border-zinc-800 gap-4">
+              <div className="bg-white dark:bg-zinc-900 py-4 px-4 flex items-center border-b border-zinc-200 dark:border-zinc-800">
                 <div className="flex-shrink-0">
                   <AISDKLogo />
-                </div>
-                <div className="flex-shrink-0">
-                  <DeployButton />
                 </div>
               </div>
 

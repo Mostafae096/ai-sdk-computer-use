@@ -44,7 +44,7 @@ export function useRateLimit(): UseRateLimitReturn {
         return;
       }
 
-      const retryAfter = extractRetryAfter(error) || 65; // Default to 65 seconds for safety
+      const retryAfter = extractRetryAfter(error) || 60; // Default to 60 seconds
       console.log('Retry after:', retryAfter);
       
       // Get the last user message - try both content string and parts array
