@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { ChatSession } from '@/lib/types/sessions';
-import { createSession as createSessionHelper, generateSessionNameFromMessages, generateSessionName, type StoredSession } from '@/lib/types/sessions';
+import { createSession as createSessionHelper, generateSessionNameFromMessages, type StoredSession } from '@/lib/types/sessions';
 import { sessionStorage, sessionToStored, storedToSession } from '@/lib/storage/session-storage';
 import type { UIMessage } from 'ai';
 import type { AgentEvent } from '@/lib/types/events';
@@ -131,46 +131,7 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
   // Load sessions from localStorage on mount
   useEffect(() => {
     const stored = sessionStorage.loadSessions();
-    let sessions = stored.map(storedToSession);
-    
-    // Regenerate names for sessions that have "New Session" but have messages
-    const sessionsToUpdate: Array<{ session: ChatSession; storedSession: StoredSession }> = [];
-    
-    const updatedSessions = sessions.map((session, index) => {
-      if (session.name === 'New Session') {
-        const storedSession = stored.find((s) => s.id === session.id);
-        if (storedSession && storedSession.messages && storedSession.messages.length > 0) {
-          // Try to extract name from messages
-          const nameFromMessages = generateSessionNameFromMessages(storedSession.messages);
-          if (nameFromMessages) {
-            // Update the session with the extracted name
-            const updated = { ...session, name: nameFromMessages };
-            sessionsToUpdate.push({
-              session: updated,
-              storedSession: { ...storedSession, name: nameFromMessages },
-            });
-            return updated;
-          } else {
-            // Use fallback naming
-            const fallbackName = generateSessionName(index);
-            const updated = { ...session, name: fallbackName };
-            sessionsToUpdate.push({
-              session: updated,
-              storedSession: { ...storedSession, name: fallbackName },
-            });
-            return updated;
-          }
-        }
-      }
-      return session;
-    });
-    
-    // Batch update all sessions that need name regeneration
-    sessionsToUpdate.forEach(({ storedSession }) => {
-      sessionStorage.saveSession(storedSession);
-    });
-    
-    sessions = updatedSessions;
+    const sessions = stored.map(storedToSession);
     dispatch({ type: 'LOAD_SESSIONS', sessions });
 
     // Set first session as active if none selected
@@ -239,23 +200,13 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Always try to update session name when messages exist
+      // Always update session name from first user message content
       let sessionName = session.name;
       if (messages.length > 0) {
         const nameFromMessages = generateSessionNameFromMessages(messages);
-        
-        if (nameFromMessages) {
-          // Successfully extracted name from messages - use it
+        // Only update if we got a valid name from messages (not "New Session")
+        if (nameFromMessages !== 'New Session') {
           sessionName = nameFromMessages;
-        } else {
-          // Extraction failed - use fallback naming if session is still "New Session"
-          // This ensures sessions get unique, identifiable names
-          if (sessionName === 'New Session') {
-            // Find the index of this session to generate a numbered name
-            const sessionIndex = state.sessions.findIndex((s) => s.id === sessionId);
-            sessionName = generateSessionName(sessionIndex >= 0 ? sessionIndex : state.sessions.length);
-          }
-          // If session already has a custom name, keep it
         }
       }
 

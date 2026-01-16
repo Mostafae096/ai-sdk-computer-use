@@ -48,67 +48,49 @@ export function generateSessionName(index: number): string {
 
 /**
  * Generate session name from messages (first user message)
- * Returns null if extraction fails, allowing caller to use fallback naming
  */
-export function generateSessionNameFromMessages(messages: UIMessage[]): string | null {
+export function generateSessionNameFromMessages(messages: UIMessage[]): string {
   const firstUserMessage = messages.find((m) => m.role === 'user');
-  if (!firstUserMessage) {
-    return null;
-  }
-
-  // Try to get text from parts or content
-  // Check parts array FIRST (new format) - this is the primary format for useChat
-  let text = '';
-  
-  if (firstUserMessage.parts && Array.isArray(firstUserMessage.parts) && firstUserMessage.parts.length > 0) {
-    // Find the first text part (using same pattern as use-rate-limit.ts)
-    const textPart = firstUserMessage.parts.find(
-      (part) => part && typeof part === 'object' && 'type' in part && part.type === 'text' && 'text' in part
-    );
-    if (textPart && 'text' in textPart && typeof textPart.text === 'string') {
-      const partText = textPart.text.trim();
-      if (partText) {
-        text = partText;
-      }
-    }
-  }
-  
-  // Fallback to content if parts didn't yield text
-  if (!text) {
+  if (firstUserMessage) {
+    // Try to get text from content or parts
+    let text = '';
+    
+    // Store content in a variable to prevent TypeScript narrowing issues
     const content = firstUserMessage.content;
     
     // Check if content is a string
-    if (typeof content === 'string' && content.trim()) {
+    if (typeof content === 'string') {
       text = content;
     } 
     // Check if content is an array (legacy format)
-    else if (Array.isArray(content) && content.length > 0) {
+    else if (Array.isArray(content)) {
       // Type assertion needed because TypeScript narrows the type incorrectly
       const contentArray = content as unknown as Array<string | { type?: string; text?: string }>;
       const textContent = contentArray.find(
         (item) => typeof item === 'string' || (typeof item === 'object' && item?.type === 'text')
       );
-      if (typeof textContent === 'string' && textContent.trim()) {
+      if (typeof textContent === 'string') {
         text = textContent;
       } else if (textContent && typeof textContent === 'object' && 'text' in textContent) {
-        const extractedText = String(textContent.text || '').trim();
-        if (extractedText) {
-          text = extractedText;
-        }
+        text = String(textContent.text || '');
       }
     }
-  }
+    // Check parts array (new format)
+    else if (firstUserMessage.parts && Array.isArray(firstUserMessage.parts)) {
+      const textPart = firstUserMessage.parts.find((p) => p.type === 'text');
+      if (textPart && 'text' in textPart) {
+        text = String(textPart.text || '');
+      }
+    }
 
-  if (text) {
-    // Clean up the text: remove extra whitespace, newlines, etc.
-    const cleaned = text.replace(/\s+/g, ' ').trim();
-    // Only truncate if longer than 30 chars, but keep meaningful content
-    const truncated = cleaned.length > 30 ? cleaned.slice(0, 30).trim() : cleaned;
-    // Return null if result is empty after cleaning
-    return truncated || null;
+    if (text) {
+      // Clean up the text: remove extra whitespace, newlines, etc.
+      const cleaned = text.replace(/\s+/g, ' ').trim();
+      const truncated = cleaned.slice(0, 30).trim();
+      return truncated || 'New Session';
+    }
   }
-  
-  return null;
+  return 'New Session';
 }
 
 /**
