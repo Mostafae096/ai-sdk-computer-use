@@ -3,6 +3,7 @@
 import { useScrollToBottom } from '@/lib/use-scroll-to-bottom';
 import { useChat } from '@ai-sdk/react';
 import { useEffect, useState, useRef } from 'react';
+import type { UIMessage } from 'ai';
 import { toast } from 'sonner';
 import { ABORTED } from '@/lib/utils';
 import { EventStoreProvider } from '@/lib/context/event-store';
@@ -94,6 +95,27 @@ function ChatContent() {
       }
     },
   });
+
+  // Track previous initialMessages to detect changes
+  const prevInitialMessagesRef = useRef<UIMessage[]>(initialMessages);
+  const prevActiveSessionIdRef = useRef<string | null>(activeSession?.id || null);
+
+  // Update chat messages when initialMessages changes (session switch)
+  useEffect(() => {
+    // Check if session changed or initialMessages changed
+    const sessionChanged = prevActiveSessionIdRef.current !== activeSession?.id;
+    const messagesChanged = 
+      prevInitialMessagesRef.current.length !== initialMessages.length ||
+      JSON.stringify(prevInitialMessagesRef.current.map(m => m.id)) !== 
+      JSON.stringify(initialMessages.map(m => m.id));
+
+    if (sessionChanged || messagesChanged) {
+      // Update chat messages to match initialMessages
+      setChatMessages(initialMessages);
+      prevInitialMessagesRef.current = initialMessages;
+      prevActiveSessionIdRef.current = activeSession?.id || null;
+    }
+  }, [initialMessages, activeSession?.id, setChatMessages]);
 
   // CRITICAL FIX: Save messages immediately when chatMessages changes
   // This ensures user messages are saved as soon as they're added, not just when AI responds
