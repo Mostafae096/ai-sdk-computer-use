@@ -56,45 +56,44 @@ export function generateSessionNameFromMessages(messages: UIMessage[]): string |
     return null;
   }
 
-  // Try to get text from content or parts
+  // Try to get text from parts or content
+  // Check parts array FIRST (new format) - this is the primary format for useChat
   let text = '';
   
-  // Store content in a variable to prevent TypeScript narrowing issues
-  const content = firstUserMessage.content;
-  
-  // Check if content is a string
-  if (typeof content === 'string' && content.trim()) {
-    text = content;
-  } 
-  // Check if content is an array (legacy format)
-  else if (Array.isArray(content) && content.length > 0) {
-    // Type assertion needed because TypeScript narrows the type incorrectly
-    const contentArray = content as unknown as Array<string | { type?: string; text?: string }>;
-    const textContent = contentArray.find(
-      (item) => typeof item === 'string' || (typeof item === 'object' && item?.type === 'text')
+  if (firstUserMessage.parts && Array.isArray(firstUserMessage.parts) && firstUserMessage.parts.length > 0) {
+    // Find the first text part (using same pattern as use-rate-limit.ts)
+    const textPart = firstUserMessage.parts.find(
+      (part) => part && typeof part === 'object' && 'type' in part && part.type === 'text' && 'text' in part
     );
-    if (typeof textContent === 'string' && textContent.trim()) {
-      text = textContent;
-    } else if (textContent && typeof textContent === 'object' && 'text' in textContent) {
-      const extractedText = String(textContent.text || '').trim();
-      if (extractedText) {
-        text = extractedText;
+    if (textPart && 'text' in textPart && typeof textPart.text === 'string') {
+      const partText = textPart.text.trim();
+      if (partText) {
+        text = partText;
       }
     }
   }
   
-  // Check parts array (new format) - this is the primary format for useChat
-  if (!text && firstUserMessage.parts && Array.isArray(firstUserMessage.parts)) {
-    // Find the first text part
-    for (const part of firstUserMessage.parts) {
-      if (part && typeof part === 'object' && 'type' in part && part.type === 'text') {
-        // Check if part has text property
-        if ('text' in part && part.text) {
-          const partText = String(part.text).trim();
-          if (partText) {
-            text = partText;
-            break;
-          }
+  // Fallback to content if parts didn't yield text
+  if (!text) {
+    const content = firstUserMessage.content;
+    
+    // Check if content is a string
+    if (typeof content === 'string' && content.trim()) {
+      text = content;
+    } 
+    // Check if content is an array (legacy format)
+    else if (Array.isArray(content) && content.length > 0) {
+      // Type assertion needed because TypeScript narrows the type incorrectly
+      const contentArray = content as unknown as Array<string | { type?: string; text?: string }>;
+      const textContent = contentArray.find(
+        (item) => typeof item === 'string' || (typeof item === 'object' && item?.type === 'text')
+      );
+      if (typeof textContent === 'string' && textContent.trim()) {
+        text = textContent;
+      } else if (textContent && typeof textContent === 'object' && 'text' in textContent) {
+        const extractedText = String(textContent.text || '').trim();
+        if (extractedText) {
+          text = extractedText;
         }
       }
     }

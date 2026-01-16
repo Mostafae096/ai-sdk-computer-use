@@ -131,7 +131,46 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
   // Load sessions from localStorage on mount
   useEffect(() => {
     const stored = sessionStorage.loadSessions();
-    const sessions = stored.map(storedToSession);
+    let sessions = stored.map(storedToSession);
+    
+    // Regenerate names for sessions that have "New Session" but have messages
+    const sessionsToUpdate: Array<{ session: ChatSession; storedSession: StoredSession }> = [];
+    
+    const updatedSessions = sessions.map((session, index) => {
+      if (session.name === 'New Session') {
+        const storedSession = stored.find((s) => s.id === session.id);
+        if (storedSession && storedSession.messages && storedSession.messages.length > 0) {
+          // Try to extract name from messages
+          const nameFromMessages = generateSessionNameFromMessages(storedSession.messages);
+          if (nameFromMessages) {
+            // Update the session with the extracted name
+            const updated = { ...session, name: nameFromMessages };
+            sessionsToUpdate.push({
+              session: updated,
+              storedSession: { ...storedSession, name: nameFromMessages },
+            });
+            return updated;
+          } else {
+            // Use fallback naming
+            const fallbackName = generateSessionName(index);
+            const updated = { ...session, name: fallbackName };
+            sessionsToUpdate.push({
+              session: updated,
+              storedSession: { ...storedSession, name: fallbackName },
+            });
+            return updated;
+          }
+        }
+      }
+      return session;
+    });
+    
+    // Batch update all sessions that need name regeneration
+    sessionsToUpdate.forEach(({ storedSession }) => {
+      sessionStorage.saveSession(storedSession);
+    });
+    
+    sessions = updatedSessions;
     dispatch({ type: 'LOAD_SESSIONS', sessions });
 
     // Set first session as active if none selected
