@@ -2,7 +2,6 @@
 
 import { useScrollToBottom } from '@/lib/use-scroll-to-bottom';
 import { useChat } from '@ai-sdk/react';
-import type { UIMessage } from 'ai';
 import { useEffect, useState, useRef } from 'react';
 import { toast } from 'sonner';
 import { ABORTED } from '@/lib/utils';
@@ -44,8 +43,7 @@ function ChatContent() {
   useStorageQuota();
 
   // Session loading and initial messages
-  const [messages, setMessages] = useState<UIMessage[]>([]);
-  const { initialMessages } = useSessionLoader(setMessages);
+  const { initialMessages } = useSessionLoader();
 
   // Chat state
   const {
@@ -88,7 +86,7 @@ function ChatContent() {
         });
       }
     },
-    onFinish: (message) => {
+    onFinish: () => {
       // Save messages when chat finishes
       // useChat already includes the finished message in chatMessages when onFinish is called
       if (activeSession) {
@@ -96,11 +94,6 @@ function ChatContent() {
       }
     },
   });
-
-  // Sync chat messages with local state
-  useEffect(() => {
-    setMessages(chatMessages);
-  }, [chatMessages]);
 
   // CRITICAL FIX: Save messages immediately when chatMessages changes
   // This ensures user messages are saved as soon as they're added, not just when AI responds
@@ -142,7 +135,7 @@ function ChatContent() {
         saveTimeoutRef.current = null;
       }
     };
-  }, [chatMessages, activeSession?.id, saveSessionMessages]);
+  }, [chatMessages, activeSession, saveSessionMessages]);
 
   // Track events from messages
   useEventTracker(chatMessages, status);
@@ -160,7 +153,7 @@ function ChatContent() {
       eventsRef.current = eventStore.events;
       saveSessionEvents(activeSession.id, eventStore.events);
     }
-  }, [eventStore.events.length, activeSession?.id]);
+  }, [eventStore.events, activeSession, saveSessionEvents]);
 
   // Handle window resize for responsive panels
   useEffect(() => {
@@ -205,7 +198,7 @@ function ChatContent() {
 
   const isLoading = status !== 'ready';
   const selectedEvent = eventStore.selectedEventId
-    ? eventStore.events.find((e) => e.id === eventStore.selectedEventId)
+    ? eventStore.events.find((e) => e.id === eventStore.selectedEventId) ?? null
     : null;
 
   return (

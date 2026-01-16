@@ -78,7 +78,7 @@ const PurePreviewMessage = ({
                       </motion.div>
                     );
                   case "tool-invocation":
-                  const { toolCallId, state: toolState } = part.toolInvocation;
+                  const { toolCallId } = part.toolInvocation;
                   
                   // Find event in store
                   const event = state.events.find((e) => e.id === toolCallId);

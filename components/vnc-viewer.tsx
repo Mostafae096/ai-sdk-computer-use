@@ -18,7 +18,7 @@ export interface VNCViewerProps {
  * Only re-renders when streamUrl, sandboxId, or isInitializing changes
  */
 export const VNCViewer = memo<VNCViewerProps>(
-  ({ streamUrl, sandboxId: _sandboxId, onRefresh, isInitializing = false }) => {
+  ({ streamUrl, onRefresh, isInitializing = false }) => {
     return (
       <div className="bg-black relative items-center justify-center h-full w-full">
         {streamUrl ? (

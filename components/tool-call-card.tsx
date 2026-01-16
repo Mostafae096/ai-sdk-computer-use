@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 import type { AgentEvent, EventStatus } from '@/lib/types/events';
@@ -174,10 +175,13 @@ export function ToolCallCard({
       {/* Screenshot thumbnail */}
       {hasThumbnail && thumbnailData && (
         <div className="p-2">
-          <img
+          <Image
             src={`data:image/png;base64,${thumbnailData}`}
             alt="Screenshot"
+            width={1024}
+            height={768}
             className="w-full aspect-[1024/768] rounded-sm object-contain bg-zinc-200 dark:bg-zinc-800"
+            unoptimized
           />
         </div>
       )}

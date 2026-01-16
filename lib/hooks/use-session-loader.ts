@@ -8,7 +8,7 @@ import type { UIMessage } from 'ai';
 /**
  * Hook to handle session loading and initial messages
  */
-export function useSessionLoader(setMessages: (messages: UIMessage[]) => void) {
+export function useSessionLoader() {
   const {
     getActiveSession,
     createSession,
@@ -46,7 +46,6 @@ export function useSessionLoader(setMessages: (messages: UIMessage[]) => void) {
         const sessionData = loadSessionData(activeSession.id);
         if (sessionData) {
           const loadedMessages = sessionData.messages || [];
-          setMessages(loadedMessages);
           setInitialMessages(loadedMessages);
           if (sessionData.events && sessionData.events.length > 0) {
             loadEvents(sessionData.events);
@@ -68,7 +67,6 @@ export function useSessionLoader(setMessages: (messages: UIMessage[]) => void) {
     if (sessionData) {
       // Load messages IMMEDIATELY - don't wait for VNC
       const loadedMessages = sessionData.messages || [];
-      setMessages(loadedMessages);
       setInitialMessages(loadedMessages);
 
       // Load events from storage
@@ -79,7 +77,6 @@ export function useSessionLoader(setMessages: (messages: UIMessage[]) => void) {
       }
     } else {
       // Session data not found - clear messages and events
-      setMessages([]);
       setInitialMessages([]);
       loadEvents([]);
     }
@@ -87,7 +84,6 @@ export function useSessionLoader(setMessages: (messages: UIMessage[]) => void) {
     sessionsLoading,
     activeSession,
     loadSessionData,
-    setMessages,
     loadEvents,
     createSession,
     setActiveSession,

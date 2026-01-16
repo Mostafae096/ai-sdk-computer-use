@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useSelectedEvent, useEventStore } from '@/lib/hooks/use-event-store';
 import { isComputerEvent, isBashEvent } from '@/lib/types/events';
 import { cn } from '@/lib/utils';
@@ -158,10 +159,13 @@ export function ToolCallDetails() {
                     Screenshot
                   </h3>
                   <div className="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-4">
-                    <img
+                    <Image
                       src={`data:image/png;base64,${event.result.data}`}
                       alt="Screenshot"
+                      width={1024}
+                      height={768}
                       className="w-full rounded border border-zinc-200 dark:border-zinc-700"
+                      unoptimized
                     />
                   </div>
                 </div>
